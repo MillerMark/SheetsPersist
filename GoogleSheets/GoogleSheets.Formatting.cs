@@ -8,9 +8,9 @@ namespace SheetsPersist
 {
 	public static partial class GoogleSheets
 	{
-		private static void AddFormatting(IList<Request> requests, int columnIndex, string pattern, string type, string documentId, string tabName)
+		private static void AddFormatting(IList<Request> requests, int columnIndex, string pattern, string type, string documentId, string sheetName)
 		{
-			Request formatRequest = GetRepeatCellRequestForEntireColumn(columnIndex, documentId, tabName);
+			Request formatRequest = GetRepeatCellRequestForEntireColumn(columnIndex, documentId, sheetName);
 			// TODO: Figure out how to indicate the entire column
 			formatRequest.RepeatCell.Cell = new CellData();
 			formatRequest.RepeatCell.Cell.UserEnteredFormat = new CellFormat();

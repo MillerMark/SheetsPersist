@@ -2,6 +2,21 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0-windows</TargetFramework>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <VersionPrefix>0.9.0.0</VersionPrefix>
+	<Version>$(VersionPrefix)-alpha</Version>
+	<Authors>Mark Miller and Rory Becker</Authors>
+	<Company />
+	<Description>Persistent Objects and Object Logging to Google Sheets.</Description>
+	<Copyright>Copyright © 2022, Mark &amp; Rory</Copyright>
+	<PackageProjectUrl>https://github.com/MillerMark/SheetsPersist</PackageProjectUrl>
+	<PackageIcon>NuGetIcon.png</PackageIcon>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
+	<RepositoryUrl>https://github.com/MillerMark/SheetsPersist</RepositoryUrl>
+	<PackageTags>Google; Sheet; Spreadsheet; Persistence; Logging; Awesome</PackageTags>
+	<PackageReleaseNotes>Initial</PackageReleaseNotes>
+	<NeutralLanguage>en</NeutralLanguage>
+	<PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,6 +27,14 @@
   <ItemGroup>
     <None Update="credentials.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="NuGetIcon.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
     </None>
   </ItemGroup>
 

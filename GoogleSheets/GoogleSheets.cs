@@ -11,11 +11,14 @@ using System.Collections.Generic;
 using System.Threading;
 using Newtonsoft.Json.Linq;
 using System.Diagnostics;
+using System.Globalization;
 
 namespace SheetsPersist
 {
 	public static partial class GoogleSheets
 	{
+		const string STR_TextFormat = "textFormat";
+		const string STR_FrozenRowCount = "gridProperties.frozenRowCount";
 		/// <summary>
 		/// Gets a List of T objects from the spreadsheet specified T's DocumentName and SheetName attributes.
 		/// </summary>
@@ -221,6 +224,76 @@ namespace SheetsPersist
 			return GetSheetId(documentIDs[documentName], sheetName) != null;
 		}
 
+		public static void HexToColor(string hexStr, out float red, out float green, out float blue)
+		{
+			if (hexStr.IndexOf('#') != -1)
+				hexStr = hexStr.Replace("#", "");
+
+			red = int.Parse(hexStr.Substring(0, 2), NumberStyles.AllowHexSpecifier) / 255.0f;
+			green = int.Parse(hexStr.Substring(2, 2), NumberStyles.AllowHexSpecifier) / 255.0f;
+			blue = int.Parse(hexStr.Substring(4, 2), NumberStyles.AllowHexSpecifier) / 255.0f;
+		}
+
+		static void MakeSureTextFormatExists(CellData cellData)
+		{
+			if (cellData.UserEnteredFormat == null)
+				cellData.UserEnteredFormat = new CellFormat();
+
+			if (cellData.UserEnteredFormat.TextFormat == null)
+				cellData.UserEnteredFormat.TextFormat = new TextFormat();
+		}
+
+		static void AddHeaderRowFormatting<T>(IList<Request> requests, string documentId, string sheetName)
+		{
+			HeaderRowAttribute headerRowAttribute = typeof(T).GetCustomAttribute<HeaderRowAttribute>();
+			if (headerRowAttribute == null)
+				return;
+
+			CellData cellData = new CellData();
+
+			string userEnteredFormatField = null;
+
+			if (!string.IsNullOrWhiteSpace(headerRowAttribute.Color))
+			{
+				HexToColor(headerRowAttribute.Color, out float red, out float green, out float blue);
+				MakeSureTextFormatExists(cellData);
+				cellData.UserEnteredFormat.TextFormat.ForegroundColor = new Color();
+				cellData.UserEnteredFormat.TextFormat.ForegroundColor.Red = red;
+				cellData.UserEnteredFormat.TextFormat.ForegroundColor.Green = green;
+				cellData.UserEnteredFormat.TextFormat.ForegroundColor.Blue = blue;
+				cellData.UserEnteredFormat.TextFormat.ForegroundColor.Alpha = 1.0f;
+				userEnteredFormatField = "userEnteredFormat.textFormat";
+			}
+
+			if (headerRowAttribute.FontWeight == FontWeight.Bold)
+			{
+				MakeSureTextFormatExists(cellData);
+				cellData.UserEnteredFormat.TextFormat.Bold = true;
+				userEnteredFormatField = "userEnteredFormat.textFormat";
+			}
+			
+
+			Request headerRowRequest = GetRepeatCellRequestForTopRow(documentId, sheetName);
+
+			if (headerRowAttribute.RowFreezeOption == RowFreezeOption.FreezeTopRow)
+			{
+				headerRowRequest.UpdateSheetProperties = new UpdateSheetPropertiesRequest();
+				headerRowRequest.UpdateSheetProperties.Properties = new SheetProperties();
+				headerRowRequest.UpdateSheetProperties.Properties.GridProperties = new GridProperties();
+				headerRowRequest.UpdateSheetProperties.Properties.GridProperties.FrozenRowCount = 1;
+				if (string.IsNullOrEmpty(userEnteredFormatField))
+					userEnteredFormatField = STR_FrozenRowCount;
+				else
+					userEnteredFormatField += ";" + STR_FrozenRowCount;
+			}
+			
+			headerRowRequest.RepeatCell.Cell = cellData;
+			headerRowRequest.RepeatCell.Cell.UserEnteredFormat = new CellFormat();
+			headerRowRequest.RepeatCell.Fields = userEnteredFormatField;
+
+			requests.Add(headerRowRequest);
+		}
+
 		/// <summary>
 		/// Adds a new specified sheet (tab) to the spreadsheet document associated with this element.
 		/// </summary>
@@ -274,6 +347,8 @@ namespace SheetsPersist
 			IList<Request> requests = new List<Request>();
 			AddColumnNotes(requests, documentId, sheetName, serializableFields);
 			AddFormatting(requests, documentId, sheetName, serializableFields);
+			AddHeaderRowFormatting<T>(requests, documentId, sheetName);
+
 			ExecuteRequests(documentId, requests);
 		}
 

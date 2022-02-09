@@ -163,6 +163,19 @@ namespace SheetsPersist
 			return commentRequest;
 		}
 
+		private static Request GetRepeatCellRequestForTopRow(string documentId, string tabName)
+		{
+			Request commentRequest = new Request();
+			commentRequest.RepeatCell = new RepeatCellRequest();
+			commentRequest.RepeatCell.Range = new GridRange();
+			commentRequest.RepeatCell.Range.SheetId = GetSheetId(documentId, tabName);
+			commentRequest.RepeatCell.Range.StartRowIndex = 0;
+			commentRequest.RepeatCell.Range.EndRowIndex = null;
+			commentRequest.RepeatCell.Range.StartRowIndex = 0;
+			commentRequest.RepeatCell.Range.EndRowIndex = 1;
+			return commentRequest;
+		}
+
 		private static void UpdateRow(string sheetName, object[] instances, string[] saveOnlyTheseMembers, List<string> headerRow, IList<IList<object>> allRows, MemberInfo[] serializableFields, int i, int rowIndex, BatchUpdateValuesRequest requestBody)
 		{
 			for (int j = 0; j < serializableFields.Length; j++)
