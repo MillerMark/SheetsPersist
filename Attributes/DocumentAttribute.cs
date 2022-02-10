@@ -4,9 +4,9 @@ using System.Linq;
 namespace SheetsPersist
 {
 	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
-	public class DocumentNameAttribute : Attribute
+	public class DocumentAttribute : Attribute
 	{
-		public DocumentNameAttribute(string sheetName)
+		public DocumentAttribute(string sheetName)
 		{
 			DocumentName = sheetName;
 		}

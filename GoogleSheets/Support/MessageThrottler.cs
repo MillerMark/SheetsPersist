@@ -16,21 +16,21 @@ namespace SheetsPersist
 
 		DateTime lastBurstTime = DateTime.MinValue;
 		readonly TimeSpan minTimeBetweenBursts;
-		string defaultTabName = "No Name";
-		string sheetNameName;
+		string defaultSheetName = "No Name";
+		string documentName;
 
 		public MessageThrottler(TimeSpan minTimeBetweenBursts)
 		{
 			this.minTimeBetweenBursts = minTimeBetweenBursts;
 			timer.Elapsed += Timer_Elapsed;
-			SheetNameAttribute tabNameAttribute = typeof(T).GetCustomAttribute<SheetNameAttribute>();
+			SheetAttribute tabNameAttribute = typeof(T).GetCustomAttribute<SheetAttribute>();
 			if (tabNameAttribute != null)
-				defaultTabName = tabNameAttribute.SheetName;
+				defaultSheetName = tabNameAttribute.SheetName;
 			else
-				defaultTabName = typeof(T).Name;
+				defaultSheetName = typeof(T).Name;
 
-			DocumentNameAttribute sheetNameAttribute = typeof(T).GetCustomAttribute<DocumentNameAttribute>();
-			sheetNameName = sheetNameAttribute.DocumentName;
+			DocumentAttribute sheetNameAttribute = typeof(T).GetCustomAttribute<DocumentAttribute>();
+			documentName = sheetNameAttribute.DocumentName;
 		}
 
 		private void Timer_Elapsed(object sender, ElapsedEventArgs e)
@@ -44,18 +44,21 @@ namespace SheetsPersist
 			lastBurstTime = DateTime.Now;
 			lock (messageLock)
 			{
-				foreach (string tabName in messages.Keys)
+				foreach (string sheetName in messages.Keys)
 				{
-					string tabKey = $"{sheetNameName}.{tabName}";
-					if (!tabNamesSeenSoFar.Contains(tabKey))
+					if (messages[sheetName].Any())
 					{
-						GoogleSheets.MakeSureSheetExists<T>(tabName);
-						tabNamesSeenSoFar.Add(tabKey);
-					}
+						bool firstMessageAdded = false;
+						string tabKey = $"{documentName}.{sheetName}";
+						if (!tabNamesSeenSoFar.Contains(tabKey))
+						{
+							firstMessageAdded = GoogleSheets.MakeSureSheetExists<T>(sheetName);
+							tabNamesSeenSoFar.Add(tabKey);
+						}
 
-					if (messages[tabName].Any())
-						GoogleSheets.InternalAppendRows<T>(messages[tabName].ToArray(), tabName);
-					messages[tabName].Clear();
+						GoogleSheets.InternalAppendRows<T>(messages[sheetName].ToArray(), sheetName, null, firstMessageAdded);
+						messages[sheetName].Clear();
+					}
 				}
 			}
 		}
@@ -63,7 +66,7 @@ namespace SheetsPersist
 		public void AppendRow(T t, string tabName = null)
 		{
 			if (tabName == null)
-				tabName = defaultTabName;
+				tabName = defaultSheetName;
 			
 			lock (messageLock)
 			{

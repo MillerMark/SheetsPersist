@@ -18,7 +18,10 @@ namespace SheetsPersist
 	public static partial class GoogleSheets
 	{
 		const string STR_TextFormat = "textFormat";
-		const string STR_FrozenRowCount = "gridProperties.frozenRowCount";
+		const string STR_GridPropertiesFrozenRowCount = "gridProperties.frozenRowCount";
+		const string STR_GridPropertiesFrozenColumnCount = "gridProperties.frozenColumnCount";
+		const string STR_GridPropertiesFrozenRowAndColumnCount = "gridProperties(frozenRowCount,frozenColumnCount)";
+
 		/// <summary>
 		/// Gets a List of T objects from the spreadsheet specified T's DocumentName and SheetName attributes.
 		/// </summary>
@@ -27,12 +30,12 @@ namespace SheetsPersist
 		/// <exception cref="InvalidDataException">Thrown if T is missing the DocumentName or SheetName attributes.</exception>
 		public static List<T> Get<T>() where T : new()
 		{
-			DocumentNameAttribute documentNameAttribute = typeof(T).GetCustomAttribute<DocumentNameAttribute>();
+			DocumentAttribute documentNameAttribute = typeof(T).GetCustomAttribute<DocumentAttribute>();
 			if (documentNameAttribute == null)
-				throw new InvalidDataException($"{nameof(DocumentNameAttribute)} not found on (\"{typeof(T).Name}\").");
-			SheetNameAttribute sheetAttribute = typeof(T).GetCustomAttribute<SheetNameAttribute>();
+				throw new InvalidDataException($"{nameof(DocumentAttribute)} not found on (\"{typeof(T).Name}\").");
+			SheetAttribute sheetAttribute = typeof(T).GetCustomAttribute<SheetAttribute>();
 			if (sheetAttribute == null)
-				throw new InvalidDataException($"{nameof(SheetNameAttribute)} not found on (\"{typeof(T).Name}\").");
+				throw new InvalidDataException($"{nameof(SheetAttribute)} not found on (\"{typeof(T).Name}\").");
 
 			return Get<T>(documentNameAttribute.DocumentName, sheetAttribute.SheetName);
 		}
@@ -156,7 +159,7 @@ namespace SheetsPersist
 				return;
 			Type instanceType = instances[0].GetType();
 
-			GetDocumentAndSheetAttributes(instanceType, out DocumentNameAttribute documentNameAttribute, out SheetNameAttribute sheetNameAttribute);
+			GetDocumentAndSheetAttributes(instanceType, out DocumentAttribute documentNameAttribute, out SheetAttribute sheetNameAttribute);
 
 			SaveChanges(documentNameAttribute.DocumentName, sheetNameAttribute.SheetName, instances, instanceType, saveOnlyTheseMembersStr);
 		}
@@ -196,14 +199,18 @@ namespace SheetsPersist
 
 		public static void DeleteRow(object instance)
 		{
-			GetDocumentAndSheetAttributes(instance.GetType(), out DocumentNameAttribute documentNameAttribute, out SheetNameAttribute sheetNameAttribute);
+			GetDocumentAndSheetAttributes(instance.GetType(), out DocumentAttribute documentNameAttribute, out SheetAttribute sheetNameAttribute);
 			DeleteRowInSheet(instance, documentNameAttribute.DocumentName, sheetNameAttribute.SheetName);
 		}
 
-		public static void MakeSureSheetExists<T>(string sheetName)
+		public static bool MakeSureSheetExists<T>(string sheetName)
 		{
 			if (!SheetExists<T>(sheetName))
+			{
 				AddSheet<T>(sheetName);
+				return true;
+			}
+			return false;
 		}
 
 		public static bool SheetExists<T>(string sheetName)
@@ -224,74 +231,88 @@ namespace SheetsPersist
 			return GetSheetId(documentIDs[documentName], sheetName) != null;
 		}
 
-		public static void HexToColor(string hexStr, out float red, out float green, out float blue)
+		static void Freeze<T>(IList<Request> requests, string documentId, string sheetName)
 		{
-			if (hexStr.IndexOf('#') != -1)
-				hexStr = hexStr.Replace("#", "");
-
-			red = int.Parse(hexStr.Substring(0, 2), NumberStyles.AllowHexSpecifier) / 255.0f;
-			green = int.Parse(hexStr.Substring(2, 2), NumberStyles.AllowHexSpecifier) / 255.0f;
-			blue = int.Parse(hexStr.Substring(4, 2), NumberStyles.AllowHexSpecifier) / 255.0f;
+			SheetAttribute sheetAttribute = typeof(T).GetCustomAttribute<SheetAttribute>();
+			
+			int frozenColumnCount = sheetAttribute != null ? sheetAttribute.FrozenColumnCount : 0;
+			int frozenRowCount = sheetAttribute != null ? sheetAttribute.FrozenRowCount : 0;
+			
+			if (frozenColumnCount != 0 || frozenRowCount != 0)
+				Freeze(requests, documentId, sheetName, frozenRowCount, frozenColumnCount);
 		}
 
-		static void MakeSureTextFormatExists(CellData cellData)
+		private static void AddHeaderRowFormatting(IList<Request> requests, string documentId, string sheetName, string color, FontWeight fontWeight)
 		{
-			if (cellData.UserEnteredFormat == null)
-				cellData.UserEnteredFormat = new CellFormat();
+			GetCellData(color, fontWeight, out CellData cellData, out string userEnteredFormatField);
 
-			if (cellData.UserEnteredFormat.TextFormat == null)
-				cellData.UserEnteredFormat.TextFormat = new TextFormat();
-		}
-
-		static void AddHeaderRowFormatting<T>(IList<Request> requests, string documentId, string sheetName)
-		{
-			HeaderRowAttribute headerRowAttribute = typeof(T).GetCustomAttribute<HeaderRowAttribute>();
-			if (headerRowAttribute == null)
-				return;
-
-			CellData cellData = new CellData();
-
-			string userEnteredFormatField = null;
-
-			if (!string.IsNullOrWhiteSpace(headerRowAttribute.Color))
+			if (userEnteredFormatField != null)
 			{
-				HexToColor(headerRowAttribute.Color, out float red, out float green, out float blue);
+				Request headerRowRequest = GetRepeatCellRequestForRow(documentId, sheetName, 0);
+				headerRowRequest.RepeatCell.Cell = cellData;
+				headerRowRequest.RepeatCell.Fields = userEnteredFormatField;
+
+				requests.Add(headerRowRequest);
+
+				//requests.Add(GetClearFormatRequest(documentId, sheetName));
+			}
+		}
+
+		private static void GetCellData(string color, FontWeight fontWeight, out CellData cellData, out string userEnteredFormatField)
+		{
+			cellData = new CellData();
+			userEnteredFormatField = null;
+			if (!string.IsNullOrWhiteSpace(color))
+			{
+				HexToColor(color, out float red, out float green, out float blue);
 				MakeSureTextFormatExists(cellData);
-				cellData.UserEnteredFormat.TextFormat.ForegroundColor = new Color();
-				cellData.UserEnteredFormat.TextFormat.ForegroundColor.Red = red;
-				cellData.UserEnteredFormat.TextFormat.ForegroundColor.Green = green;
-				cellData.UserEnteredFormat.TextFormat.ForegroundColor.Blue = blue;
-				cellData.UserEnteredFormat.TextFormat.ForegroundColor.Alpha = 1.0f;
-				userEnteredFormatField = "userEnteredFormat.textFormat";
+				cellData.UserEnteredFormat.TextFormat.ForegroundColor = new Color() { Red = red, Green = green, Blue = blue };
+				userEnteredFormatField = "userEnteredFormat(textFormat)";
 			}
 
-			if (headerRowAttribute.FontWeight == FontWeight.Bold)
+			if (fontWeight == FontWeight.Bold)
 			{
 				MakeSureTextFormatExists(cellData);
 				cellData.UserEnteredFormat.TextFormat.Bold = true;
-				userEnteredFormatField = "userEnteredFormat.textFormat";
+				userEnteredFormatField = "userEnteredFormat(textFormat)";
 			}
-			
 
-			Request headerRowRequest = GetRepeatCellRequestForTopRow(documentId, sheetName);
+			if (userEnteredFormatField == null)
+				cellData = null;
+		}
 
-			if (headerRowAttribute.RowFreezeOption == RowFreezeOption.FreezeTopRow)
-			{
-				headerRowRequest.UpdateSheetProperties = new UpdateSheetPropertiesRequest();
-				headerRowRequest.UpdateSheetProperties.Properties = new SheetProperties();
-				headerRowRequest.UpdateSheetProperties.Properties.GridProperties = new GridProperties();
-				headerRowRequest.UpdateSheetProperties.Properties.GridProperties.FrozenRowCount = 1;
-				if (string.IsNullOrEmpty(userEnteredFormatField))
-					userEnteredFormatField = STR_FrozenRowCount;
-				else
-					userEnteredFormatField += ";" + STR_FrozenRowCount;
-			}
-			
-			headerRowRequest.RepeatCell.Cell = cellData;
-			headerRowRequest.RepeatCell.Cell.UserEnteredFormat = new CellFormat();
-			headerRowRequest.RepeatCell.Fields = userEnteredFormatField;
+		private static void Freeze(IList<Request> requests, string documentId, string sheetName, int frozenRowCount = 0, int frozenColumnCount = 0)
+		{
+			Request freezeRequest = new Request();
+			freezeRequest.UpdateSheetProperties = new UpdateSheetPropertiesRequest();
+			freezeRequest.UpdateSheetProperties.Properties = new SheetProperties();
+			freezeRequest.UpdateSheetProperties.Properties.GridProperties = new GridProperties();
 
-			requests.Add(headerRowRequest);
+			freezeRequest.UpdateSheetProperties.Properties.GridProperties.FrozenRowCount = frozenRowCount;
+			freezeRequest.UpdateSheetProperties.Properties.GridProperties.FrozenColumnCount = frozenColumnCount;
+
+			if (frozenRowCount != 0 && frozenColumnCount != 0)
+				freezeRequest.UpdateSheetProperties.Fields = STR_GridPropertiesFrozenRowAndColumnCount;
+			else if (frozenRowCount != 0)
+				freezeRequest.UpdateSheetProperties.Fields = STR_GridPropertiesFrozenRowCount;
+			else
+				freezeRequest.UpdateSheetProperties.Fields = STR_GridPropertiesFrozenColumnCount;
+
+			freezeRequest.UpdateSheetProperties.Properties.SheetId = GetSheetId(documentId, sheetName);
+			requests.Add(freezeRequest);
+		}
+
+		private static Request GetClearFormatRequest(string documentId, string sheetName)
+		{
+			CellData clearCellData = new CellData();
+			MakeSureTextFormatExists(clearCellData);
+			clearCellData.UserEnteredFormat.TextFormat.Bold = false;
+			clearCellData.UserEnteredFormat.TextFormat.ForegroundColor = new Color() { Red = 0, Green = 0, Blue = 0 };
+			Request secondRowRequest = GetRepeatCellRequestForRow(documentId, sheetName, 1);
+			secondRowRequest.RepeatCell.Range.EndRowIndex = null;
+			secondRowRequest.RepeatCell.Cell = clearCellData;
+			secondRowRequest.RepeatCell.Fields = "userEnteredFormat(textFormat)";
+			return secondRowRequest;
 		}
 
 		/// <summary>
@@ -347,7 +368,7 @@ namespace SheetsPersist
 			IList<Request> requests = new List<Request>();
 			AddColumnNotes(requests, documentId, sheetName, serializableFields);
 			AddFormatting(requests, documentId, sheetName, serializableFields);
-			AddHeaderRowFormatting<T>(requests, documentId, sheetName);
+			Freeze<T>(requests, documentId, sheetName);
 
 			ExecuteRequests(documentId, requests);
 		}

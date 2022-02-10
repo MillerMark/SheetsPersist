@@ -33,48 +33,86 @@ namespace SheetsPersist
 
 		private static string GetDocumentName<T>()
 		{
-			DocumentNameAttribute documentNameAttribute = GetDocumentAttributes(typeof(T));
+			DocumentAttribute documentNameAttribute = GetDocumentAttributes(typeof(T));
 			return documentNameAttribute?.DocumentName;
 		}
 
-		internal static void InternalAppendRows<T>(T[] instances, string sheetNameOverride = null, string documentNameOverride = null) where T : class
+		internal static void InternalAppendRows<T>(T[] instances, string sheetNameOverride = null, string documentNameOverride = null, bool justAddedFirstRow = false) where T : class
 		{
 			if (instances == null || instances.Length == 0)
 				return;
 
-			GetDocumentAndSheetAttributes(typeof(T), out DocumentNameAttribute documentNameAttribute, out SheetNameAttribute tabNameAttribute);
+			GetDocumentAndSheetAttributes(typeof(T), out DocumentAttribute documentNameAttribute, out SheetAttribute tabNameAttribute);
 
 			string documentName;
-			string tabName;
+			string sheetName;
 			if (documentNameOverride != null)
 				documentName = documentNameOverride;
 			else
 				documentName = documentNameAttribute.DocumentName;
 
 			if (sheetNameOverride != null)
-				tabName = sheetNameOverride;
+				sheetName = sheetNameOverride;
 			else
-				tabName = tabNameAttribute.SheetName;
+				sheetName = tabNameAttribute.SheetName;
 
-			Track(documentName, tabName);
-			ValidateDocumentAndSheetNames(documentName, tabName);
+			Track(documentName, sheetName);
+			ValidateDocumentAndSheetNames(documentName, sheetName);
 			string documentId = documentIDs[documentName];
-
-			IList<IList<Object>> values = new List<IList<Object>>();
-
 
 			MemberInfo[] serializableFields = GetSerializableFields<ColumnAttribute>(typeof(T));
 
-			foreach (object instance in instances)
+			if (justAddedFirstRow)
 			{
-				IList<Object> row = new List<Object>();
-				foreach (MemberInfo memberInfo in serializableFields)
-					row.Add(GetValue(instance, memberInfo));
+				IList<IList<Object>> firstRow = AddRows(instances, serializableFields, 0, 0);
+				ExecuteAppendRows(documentId, sheetName, firstRow);
 
-				values.Add(row);
+				// We have to format the second row (after the header), so remaining calls to AppendRows will take the format of the previous row.
+				IList<Request> requests = new List<Request>();
+				AddHeaderColumnFormatting(requests, documentId, sheetName, serializableFields);
+				ExecuteRequests(documentId, requests);
+
+				if (instances.Length > 1)
+				{
+					IList<IList<Object>> remainingRows = AddRows(instances, serializableFields, 1);
+					ExecuteAppendRows(documentId, sheetName, remainingRows);
+				}
+
+				requests = new List<Request>();
+				AddHeaderRowFormatting<T>(requests, documentId, sheetName);
+				ExecuteRequests(documentId, requests);
+			}
+			else
+			{
+				IList<IList<Object>> allRows = AddRows(instances, serializableFields, 0);
+				ExecuteAppendRows(documentId, sheetName, allRows);
 			}
 
-			ExecuteAppendRows(documentId, tabName, values);
+			
+		}
+
+		private static IList<IList<object>> AddRows<T>(T[] instances, MemberInfo[] serializableFields, int startIndex, int endIndex = -1) where T : class
+		{
+			IList<IList<Object>> rows = new List<IList<Object>>();
+			if (endIndex == -1)
+				endIndex = instances.Length - 1;
+
+			for (int i = startIndex; i <= endIndex; i++)
+			{
+				T instance = instances[i];
+				AddRow(rows, serializableFields, instance);
+			}
+
+			return rows;
+		}
+
+		private static void AddRow<T>(IList<IList<object>> rows, MemberInfo[] serializableFields, T instance) where T : class
+		{
+			IList<Object> row = new List<Object>();
+			foreach (MemberInfo memberInfo in serializableFields)
+				row.Add(GetValue(instance, memberInfo));
+
+			rows.Add(row);
 		}
 
 		private static void ExecuteRequests(string documentId, IList<Request> requests)
@@ -135,45 +173,71 @@ namespace SheetsPersist
 
 		private static Request GetUpdateRequestForCellInTopRow(int columnIndex, string documentId, string tabName)
 		{
-			Request commentRequest = new Request();
-			commentRequest.UpdateCells = new UpdateCellsRequest();
-			commentRequest.UpdateCells.Range = new GridRange();
-			commentRequest.UpdateCells.Range.SheetId = GetSheetId(documentId, tabName);
-			commentRequest.UpdateCells.Range.StartRowIndex = 0;
-			commentRequest.UpdateCells.Range.EndRowIndex = 1;
-			commentRequest.UpdateCells.Range.StartColumnIndex = columnIndex;
-			commentRequest.UpdateCells.Range.EndColumnIndex = columnIndex + 1;
-			commentRequest.UpdateCells.Rows = new List<RowData>();
-			commentRequest.UpdateCells.Rows.Add(new RowData());
-			commentRequest.UpdateCells.Rows[0].Values = new List<CellData>();
-			commentRequest.UpdateCells.Rows[0].Values.Add(new CellData());
-			return commentRequest;
+			Request request = new Request();
+			request.UpdateCells = new UpdateCellsRequest();
+			request.UpdateCells.Range = new GridRange();
+			request.UpdateCells.Range.SheetId = GetSheetId(documentId, tabName);
+			request.UpdateCells.Range.StartRowIndex = 0;
+			request.UpdateCells.Range.EndRowIndex = 1;
+			request.UpdateCells.Range.StartColumnIndex = columnIndex;
+			request.UpdateCells.Range.EndColumnIndex = columnIndex + 1;
+			request.UpdateCells.Rows = new List<RowData>();
+			request.UpdateCells.Rows.Add(new RowData());
+			request.UpdateCells.Rows[0].Values = new List<CellData>();
+			request.UpdateCells.Rows[0].Values.Add(new CellData());
+			return request;
 		}
 
 		private static Request GetRepeatCellRequestForEntireColumn(int columnIndex, string documentId, string tabName)
 		{
-			Request commentRequest = new Request();
-			commentRequest.RepeatCell = new RepeatCellRequest();
-			commentRequest.RepeatCell.Range = new GridRange();
-			commentRequest.RepeatCell.Range.SheetId = GetSheetId(documentId, tabName);
-			commentRequest.RepeatCell.Range.StartRowIndex = 0;
-			commentRequest.RepeatCell.Range.EndRowIndex = null;
-			commentRequest.RepeatCell.Range.StartColumnIndex = columnIndex;
-			commentRequest.RepeatCell.Range.EndColumnIndex = columnIndex + 1;
-			return commentRequest;
+			Request request = new Request();
+			request.RepeatCell = new RepeatCellRequest();
+			request.RepeatCell.Range = new GridRange();
+			request.RepeatCell.Range.SheetId = GetSheetId(documentId, tabName);
+			request.RepeatCell.Range.StartRowIndex = 0;
+			request.RepeatCell.Range.EndRowIndex = null;
+			request.RepeatCell.Range.StartColumnIndex = columnIndex;
+			request.RepeatCell.Range.EndColumnIndex = columnIndex + 1;
+			return request;
 		}
 
-		private static Request GetRepeatCellRequestForTopRow(string documentId, string tabName)
+		private static Request GetRepeatCellRequestForRow(string documentId, string sheetName, int row)
 		{
-			Request commentRequest = new Request();
-			commentRequest.RepeatCell = new RepeatCellRequest();
-			commentRequest.RepeatCell.Range = new GridRange();
-			commentRequest.RepeatCell.Range.SheetId = GetSheetId(documentId, tabName);
-			commentRequest.RepeatCell.Range.StartRowIndex = 0;
-			commentRequest.RepeatCell.Range.EndRowIndex = null;
-			commentRequest.RepeatCell.Range.StartRowIndex = 0;
-			commentRequest.RepeatCell.Range.EndRowIndex = 1;
-			return commentRequest;
+			Request request = new Request();
+			request.RepeatCell = new RepeatCellRequest();
+			request.RepeatCell.Range = new GridRange();
+			request.RepeatCell.Range.SheetId = GetSheetId(documentId, sheetName);
+			request.RepeatCell.Range.StartColumnIndex = null;
+			request.RepeatCell.Range.EndColumnIndex = null;
+			request.RepeatCell.Range.StartRowIndex = row;
+			request.RepeatCell.Range.EndRowIndex = row + 1;
+			return request;
+		}
+
+		private static Request GetRepeatCellRequest(string documentId, string sheetName, CellPosition cellPosition)
+		{
+			Request request = new Request();
+			request.RepeatCell = new RepeatCellRequest();
+			request.RepeatCell.Range = new GridRange();
+			request.RepeatCell.Range.SheetId = GetSheetId(documentId, sheetName);
+			request.RepeatCell.Range.StartColumnIndex = cellPosition.Column;
+			request.RepeatCell.Range.EndColumnIndex = cellPosition.Column + 1;
+			request.RepeatCell.Range.StartRowIndex = cellPosition.Row;
+			request.RepeatCell.Range.EndRowIndex = cellPosition.Row + 1;
+			return request;
+		}
+
+		private static Request GetUpdateCellRequestForRow(string documentId, string sheetName, int row)
+		{
+			Request request = new Request();
+			request.UpdateCells = new UpdateCellsRequest();
+			request.UpdateCells.Range = new GridRange();
+			request.UpdateCells.Range.SheetId = GetSheetId(documentId, sheetName);
+			request.UpdateCells.Range.StartColumnIndex = 0;
+			request.UpdateCells.Range.EndColumnIndex = null;
+			request.UpdateCells.Range.StartRowIndex = row;
+			request.UpdateCells.Range.EndRowIndex = row + 1;
+			return request;
 		}
 
 		private static void UpdateRow(string sheetName, object[] instances, string[] saveOnlyTheseMembers, List<string> headerRow, IList<IList<object>> allRows, MemberInfo[] serializableFields, int i, int rowIndex, BatchUpdateValuesRequest requestBody)
@@ -288,20 +352,20 @@ namespace SheetsPersist
 			}
 		}
 
-		private static void GetDocumentAndSheetAttributes(Type instanceType, out DocumentNameAttribute documentNameAttribute, out SheetNameAttribute sheetNameAttribute)
+		private static void GetDocumentAndSheetAttributes(Type instanceType, out DocumentAttribute documentNameAttribute, out SheetAttribute sheetNameAttribute)
 		{
 			documentNameAttribute = GetDocumentAttributes(instanceType);
 
-			sheetNameAttribute = instanceType.GetCustomAttribute<SheetNameAttribute>();
+			sheetNameAttribute = instanceType.GetCustomAttribute<SheetAttribute>();
 			if (sheetNameAttribute == null)
-				throw new InvalidDataException($"{instanceType.Name} needs to specify the \"{nameof(SheetNameAttribute)}\" attribute.");
+				throw new InvalidDataException($"{instanceType.Name} needs to specify the \"{nameof(SheetAttribute)}\" attribute.");
 		}
 
-		private static DocumentNameAttribute GetDocumentAttributes(Type instanceType)
+		private static DocumentAttribute GetDocumentAttributes(Type instanceType)
 		{
-			DocumentNameAttribute documentNameAttribute = instanceType.GetCustomAttribute<DocumentNameAttribute>();
+			DocumentAttribute documentNameAttribute = instanceType.GetCustomAttribute<DocumentAttribute>();
 			if (documentNameAttribute == null)
-				throw new InvalidDataException($"{instanceType.Name} needs to specify the \"{nameof(DocumentNameAttribute)}\" attribute.");
+				throw new InvalidDataException($"{instanceType.Name} needs to specify the \"{nameof(DocumentAttribute)}\" attribute.");
 			return documentNameAttribute;
 		}
 
