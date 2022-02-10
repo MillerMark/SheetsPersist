@@ -9,7 +9,8 @@ SheetsPersist gives you two ways to integrate .NET object instances with Google 
 ## Spreadsheet Registration
 The first thing you need to do is register your spreadsheet. You can do this with a call like this:
 
-GoogleSheets.RegisterDocumentID("LogTest", "1YnqCNZFqfdRP_7ocmAkD0dpI-G_bFnwGH1vN-YppAZE");
+```csharp
+```GoogleSheets.RegisterDocumentID("LogTest", "1YnqCNZFqfdRP_7ocmAkD0dpI-G_bFnwGH1vN-YppAZE");
 
 The first parameter is the name of the spreadsheet as you would like to refer to it in the code.
 
@@ -27,14 +28,14 @@ Any class that needs to be written to or read from a Google Sheet, needs to be a
 The Document attribute includes the name of the document passed to RegisterDocumentID (see above). This is the 
 spreadsheet that will hold saved instances.
 
-```
+```csharp
 [Document("LogTest")]
 ```
 
 
 The Sheet attribute contains the name of the sheet (tab) to read from or write to.
 
-```
+```csharp
 [Sheet("CGR", 1)]
 ```
 
