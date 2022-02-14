@@ -3,6 +3,19 @@ using System.Linq;
 
 namespace SheetsPersist
 {
-	public readonly record struct CellPosition(int Column, int Row);
+	public readonly struct CellPosition
+	{
+		readonly int column;
+		readonly int row;
+		public CellPosition(int column, int row)
+		{
+			this.column = column;
+			this.row = row;
+		}
+
+		public int Column => column;
+
+		public int Row => row;
+	}
 }
 

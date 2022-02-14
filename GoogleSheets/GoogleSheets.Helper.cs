@@ -316,7 +316,10 @@ namespace SheetsPersist
 			}
 			catch (Exception ex)
 			{
-
+				if (ex != null)
+				{
+					
+				}
 			}
 		}
 
@@ -348,6 +351,10 @@ namespace SheetsPersist
 			}
 			catch (Exception ex)
 			{
+				if (ex != null)
+				{
+
+				}
 				ExecuteBatchUpdate(documentId, requestBody);
 			}
 		}
