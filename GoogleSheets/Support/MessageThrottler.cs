@@ -41,7 +41,7 @@ namespace SheetsPersist
 
 		void SendAllMessages()
 		{
-			lastBurstTime = DateTime.Now;
+			lastBurstTime = DateTime.UtcNow;
 			lock (messageLock)
 			{
 				foreach (string sheetName in messages.Keys)
@@ -77,7 +77,7 @@ namespace SheetsPersist
 
 			// ![](BAEDF4D24FB1C180CE95B77D1FF1A93C.png)
 
-			DateTime now = DateTime.Now;
+			DateTime now = DateTime.UtcNow;
 			TimeSpan timeSinceLastBurst = now - lastBurstTime;
 			bool firstBurst = lastBurstTime == DateTime.MinValue;
 			if (firstBurst || timeSinceLastBurst > minTimeBetweenBursts)

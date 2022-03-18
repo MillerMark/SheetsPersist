@@ -6,9 +6,9 @@ namespace SheetsPersist
 	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
 	public class DocumentAttribute : Attribute
 	{
-		public DocumentAttribute(string sheetName)
+		public DocumentAttribute(string documentName)
 		{
-			DocumentName = sheetName;
+			DocumentName = documentName;
 		}
 
 		public string DocumentName { get; set; }
