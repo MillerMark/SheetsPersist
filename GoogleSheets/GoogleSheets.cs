@@ -8,6 +8,7 @@ using System.Reflection;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
 using System.Threading;
 using Newtonsoft.Json.Linq;
 using System.Diagnostics;
@@ -17,6 +18,10 @@ namespace SheetsPersist
 {
 	public static partial class GoogleSheets
 	{
+		/// <summary>
+		/// Determines whether exceptions are thrown or logged to the console.
+		/// </summary>
+		public static ExceptionHandlingOption ExceptionHandlingOption { get; set; } = ExceptionHandlingOption.ThrowException;
 		const string STR_TextFormat = "textFormat";
 		const string STR_GridPropertiesFrozenRowCount = "gridProperties.frozenRowCount";
 		const string STR_GridPropertiesFrozenColumnCount = "gridProperties.frozenColumnCount";
@@ -53,10 +58,18 @@ namespace SheetsPersist
 			else
 				range = $"{sheetName}!{cellRange}";
 
-			SpreadsheetsResource.ValuesResource.GetRequest request = Service.Spreadsheets.Values.Get(documentId, range);
-			ValueRange response = request.Execute();
-			return response.Values;
-		}
+            SpreadsheetsResource.ValuesResource.GetRequest request = Service.Spreadsheets.Values.Get(documentId, range);
+            try
+            {
+                ValueRange response = request.Execute();
+                return response.Values;
+            }
+            catch (Exception ex)
+            {
+				HandleException($"Exception executing GetRequest.", documentId, sheetName, ex);
+				return null;
+            }
+        }
 
 
 		static T NewItem<T>(Dictionary<int, string> headers, IList<object> row) where T : new()
@@ -93,17 +106,33 @@ namespace SheetsPersist
 				}
 			}
 			catch (Exception ex)
-			{
-				string title = $"{ex.GetType()} reading google sheet ({documentName} - {sheetName}): ";
-				while (ex != null)
-				{
-					Console.WriteLine($"{title} \"{ex.Message}\"");
-					ex = ex.InnerException;
-					if (ex != null)
-						title = $"Inner {ex.GetType()}: ";
-				}
+            {
+                HandleException($"Exception reading cells of type <{typeof(T).Name}>.", documentName, sheetName, ex);
+
 			}
-			return result;
+            return result;
+		}
+
+        private static void HandleException(string message, string documentName, string sheetName, Exception ex)
+        {
+            if (ExceptionHandlingOption == ExceptionHandlingOption.LogToConsole)
+                LogExceptionToConsole(documentName, sheetName, ex);
+            else
+                throw new SheetsPersistException(message + " See inner exception for details.", ex) { DocumentName = documentName, SheetName = sheetName };
+        }
+
+        private static void LogExceptionToConsole(string documentName, string sheetName, Exception ex)
+		{
+			string title = $"{ex.GetType()} with google sheet ({documentName} - {sheetName}): ";
+            string indent = "";
+            while (ex != null)
+			{
+				Console.WriteLine($"{title} \"{ex.Message}\"");
+				ex = ex.InnerException;
+				indent += "  ";
+				if (ex != null)
+					title = $"{indent}Inner {ex.GetType()}: ";
+			}
 		}
 
 		/// <summary>
@@ -322,69 +351,88 @@ namespace SheetsPersist
 		/// RegisterDocumentID).</typeparam>
 		/// <param name="sheetName">The name of the sheet (the tab) to create.</param>
 		public static void AddSheet<T>(string sheetName)
-		{
-			string documentName = GetDocumentName<T>();
-			AddSheetRequest addSheetRequest = new AddSheetRequest();
-			SheetProperties sheetProperties = new SheetProperties() { Title = sheetName };
+        {
+            string documentId = CreateNewSheet<T>(sheetName);
 
-			addSheetRequest.Properties = sheetProperties;
+            MemberInfo[] serializableFields = GetSerializableFields<ColumnAttribute>(typeof(T));
+            List<IList<object>> rows = GetRows(serializableFields);
 
-			BatchUpdateSpreadsheetRequest batchUpdateSpreadsheetRequest = new BatchUpdateSpreadsheetRequest();
+            ExecuteAppendRows(documentId, sheetName, rows);
 
-			//Create requestList and set it on the batchUpdateSpreadsheetRequest
-			List<Request> requestsList = new List<Request>();
-			batchUpdateSpreadsheetRequest.Requests = requestsList;
+            IList<Request> requests = new List<Request>();
+            PrepareNewSheet<T>(sheetName, documentId, serializableFields, requests);
 
-			//Create a new request with containing the addSheetRequest and add it to the requestList
-			Request request = new Request();
-			request.AddSheet = addSheetRequest;
-			requestsList.Add(request);
+            ExecuteRequests(documentId, requests);
+        }
 
-			//Add the requestList to the batchUpdateSpreadsheetRequest
-			batchUpdateSpreadsheetRequest.Requests = requestsList;
+		private static string CreateNewSheet<T>(string sheetName)
+        {
+            string documentName = GetDocumentName<T>();
+            AddSheetRequest addSheetRequest = new AddSheetRequest();
+            SheetProperties sheetProperties = new SheetProperties() { Title = sheetName };
 
-			//Call the sheets API to execute the batchUpdate
-			string documentId = documentIDs[documentName];
-			Service.Spreadsheets.BatchUpdate(batchUpdateSpreadsheetRequest, documentId).Execute();
+            addSheetRequest.Properties = sheetProperties;
 
-			// TODO: To optimize for performance, consider rolling this next ExecuteAppendRow call into the previous batch update.
+            BatchUpdateSpreadsheetRequest batchUpdateSpreadsheetRequest = new BatchUpdateSpreadsheetRequest();
 
-			List<object> columns = new List<object>();
-			MemberInfo[] serializableFields = GetSerializableFields<ColumnAttribute>(typeof(T));
-			foreach (MemberInfo memberInfo in serializableFields)
-			{
-				ColumnAttribute columnAttribute = memberInfo.GetCustomAttribute<ColumnAttribute>();
-				if (columnAttribute != null && !string.IsNullOrEmpty(columnAttribute.ColumnName))
-					columns.Add(columnAttribute.ColumnName);
-				else
-					columns.Add(memberInfo.Name);
+            //Create requestList and set it on the batchUpdateSpreadsheetRequest
+            List<Request> requestsList = new List<Request>();
+            batchUpdateSpreadsheetRequest.Requests = requestsList;
+
+            //Create a new request with containing the addSheetRequest and add it to the requestList
+            Request request = new Request();
+            request.AddSheet = addSheetRequest;
+            requestsList.Add(request);
+
+            //Call the sheets API to execute the batchUpdate
+            string documentId = documentIDs[documentName];
+            try
+            {
+                Service.Spreadsheets.BatchUpdate(batchUpdateSpreadsheetRequest, documentId).Execute();
+            }
+            catch (Exception ex)
+            {
+				HandleException($"Exception executing BatchUpdate.", documentName, sheetName, ex);
 			}
+            return documentId;
+        }
 
-			List<IList<object>> rows = new List<IList<object>>();
-			rows.Add(columns);
+        private static void PrepareNewSheet<T>(string sheetName, string documentId, MemberInfo[] serializableFields, IList<Request> requests)
+        {
+            AddColumnNotes(requests, documentId, sheetName, serializableFields);
+            AddFormatting(requests, documentId, sheetName, serializableFields);
+            Freeze<T>(requests, documentId, sheetName);
+        }
 
-			ExecuteAppendRows(documentId, sheetName, rows);
+        private static List<IList<object>> GetRows(MemberInfo[] serializableFields)
+        {
+            List<object> columns = new List<object>();
+            foreach (MemberInfo memberInfo in serializableFields)
+            {
+                ColumnAttribute columnAttribute = memberInfo.GetCustomAttribute<ColumnAttribute>();
+                if (columnAttribute != null && !string.IsNullOrEmpty(columnAttribute.ColumnName))
+                    columns.Add(columnAttribute.ColumnName);
+                else
+                    columns.Add(memberInfo.Name);
+            }
 
-			IList<Request> requests = new List<Request>();
-			AddColumnNotes(requests, documentId, sheetName, serializableFields);
-			AddFormatting(requests, documentId, sheetName, serializableFields);
-			Freeze<T>(requests, documentId, sheetName);
+            List<IList<object>> rows = new List<IList<object>>();
+            rows.Add(columns);
+            return rows;
+        }
 
-			ExecuteRequests(documentId, requests);
-		}
-
-		/// <summary>
-		/// Appends a row representing the specified instance, writing its field values out to the spreadsheet. Make 
-		/// sure your instance class has the [<cref>DocumentName</cref>] attribute (and that spreadsheet document has 
-		/// been registered with <cref>RegisterSpreadsheetID</cref>), and add the [Column] attribute to any members that 
-		/// you want to write out to the spreadsheet. Messages sent here are throttled so as not to exceed the Google 
-		/// sheets per-minute usage limits. The time to wait between message bursts is determined by the 
-		/// <cref>TimeBetweenThrottledUpdates</cref> property.
-		/// </summary>
-		/// <typeparam name="T">The type to append</typeparam>
-		/// <param name="instance">The instance of the type containing the writable data (in its public fields and properties marked with the [Column] attribute).</param>
-		/// <param name="sheetNameOverride">An optional override for the sheet (tab) name.</param>
-		public static void AppendRow<T>(T instance, string sheetNameOverride = null) where T : class
+        /// <summary>
+        /// Appends a row representing the specified instance, writing its field values out to the spreadsheet. Make 
+        /// sure your instance class has the [<cref>DocumentName</cref>] attribute (and that spreadsheet document has 
+        /// been registered with <cref>RegisterSpreadsheetID</cref>), and add the [Column] attribute to any members that 
+        /// you want to write out to the spreadsheet. Messages sent here are throttled so as not to exceed the Google 
+        /// sheets per-minute usage limits. The time to wait between message bursts is determined by the 
+        /// <cref>TimeBetweenThrottledUpdates</cref> property.
+        /// </summary>
+        /// <typeparam name="T">The type to append</typeparam>
+        /// <param name="instance">The instance of the type containing the writable data (in its public fields and properties marked with the [Column] attribute).</param>
+        /// <param name="sheetNameOverride">An optional override for the sheet (tab) name.</param>
+        public static void AppendRow<T>(T instance, string sheetNameOverride = null) where T : class
 		{
 			if (!messageThrottlers.ContainsKey(typeof(T)))
 				messageThrottlers[typeof(T)] = new MessageThrottler<T>(TimeBetweenThrottledUpdates);
@@ -407,7 +455,7 @@ namespace SheetsPersist
 			}
 		}
 
-		public static TimeSpan TimeBetweenThrottledUpdates { get; set; } = TimeSpan.FromSeconds(5);
+		public static TimeSpan TimeBetweenThrottledUpdates { get; set; } = TimeSpan.FromSeconds(10);
 		public static SheetsService Service
 		{
 			get
