@@ -81,7 +81,7 @@ namespace SheetsPersist
 			requests.Add(formatRequest);
 		}
 
-		private static void AddFormatting(IList<Request> requests, string documentId, string tabName, MemberInfo[] serializableFields)
+		private static void AddFormatting(IList<Request> requests, string documentId, string sheetName, MemberInfo[] serializableFields)
 		{
 			int columnIndex = 0;
 
@@ -89,15 +89,15 @@ namespace SheetsPersist
 			{
 				FormatNumberAttribute formatNumberAttribute = memberInfo.GetCustomAttribute<FormatNumberAttribute>();
 				if (formatNumberAttribute != null && !string.IsNullOrEmpty(formatNumberAttribute.Pattern))
-					AddFormatting(requests, columnIndex, formatNumberAttribute.Pattern, "NUMBER", documentId, tabName);
+					AddFormatting(requests, columnIndex, formatNumberAttribute.Pattern, "NUMBER", documentId, sheetName);
 
 				FormatDateAttribute formatDateAttribute = memberInfo.GetCustomAttribute<FormatDateAttribute>();
 				if (formatDateAttribute != null && !string.IsNullOrEmpty(formatDateAttribute.Pattern))
-					AddFormatting(requests, columnIndex, formatDateAttribute.Pattern, "DATE", documentId, tabName);
+					AddFormatting(requests, columnIndex, formatDateAttribute.Pattern, "DATE", documentId, sheetName);
 
 				FormatCurrencyAttribute formatCurrencyAttribute = memberInfo.GetCustomAttribute<FormatCurrencyAttribute>();
 				if (formatCurrencyAttribute != null && !string.IsNullOrEmpty(formatCurrencyAttribute.Pattern))
-					AddFormatting(requests, columnIndex, formatCurrencyAttribute.Pattern, "CURRENCY", documentId, tabName);
+					AddFormatting(requests, columnIndex, formatCurrencyAttribute.Pattern, "CURRENCY", documentId, sheetName);
 
 				columnIndex++;
 			}

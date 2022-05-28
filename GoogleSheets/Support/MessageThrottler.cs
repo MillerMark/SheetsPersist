@@ -3,12 +3,13 @@ using System.Linq;
 using System.Timers;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace SheetsPersist
 {
 	public class MessageThrottler<T> where T: class
 	{
-		List<string> tabNamesSeenSoFar = new List<string>();
+		List<string> sheetNamesSeenSoFar = new List<string>();
 		Timer timer = new Timer();
 
 		object messageLock = new object();
@@ -23,20 +24,20 @@ namespace SheetsPersist
 		{
 			this.minTimeBetweenBursts = minTimeBetweenBursts;
 			timer.Elapsed += Timer_Elapsed;
-			SheetAttribute tabNameAttribute = typeof(T).GetCustomAttribute<SheetAttribute>();
-			if (tabNameAttribute != null)
-				defaultSheetName = tabNameAttribute.SheetName;
+			SheetAttribute sheetNameAttribute = typeof(T).GetCustomAttribute<SheetAttribute>();
+			if (sheetNameAttribute != null)
+				defaultSheetName = sheetNameAttribute.SheetName;
 			else
 				defaultSheetName = typeof(T).Name;
 
-			DocumentAttribute sheetNameAttribute = typeof(T).GetCustomAttribute<DocumentAttribute>();
-			documentName = sheetNameAttribute.DocumentName;
+			DocumentAttribute documentNameAttribute = typeof(T).GetCustomAttribute<DocumentAttribute>();
+			documentName = documentNameAttribute.DocumentName;
 		}
 
 		private void Timer_Elapsed(object sender, ElapsedEventArgs e)
 		{
 			timer.Enabled = false;
-			SendAllMessages();
+            SendAllMessages();
 		}
 
 		void SendAllMessages()
@@ -50,10 +51,10 @@ namespace SheetsPersist
 					{
 						bool firstMessageAdded = false;
 						string tabKey = $"{documentName}.{sheetName}";
-						if (!tabNamesSeenSoFar.Contains(tabKey))
+						if (!sheetNamesSeenSoFar.Contains(tabKey))
 						{
 							firstMessageAdded = GoogleSheets.MakeSureSheetExists<T>(sheetName);
-							tabNamesSeenSoFar.Add(tabKey);
+							sheetNamesSeenSoFar.Add(tabKey);
 						}
 
 						GoogleSheets.InternalAppendRows<T>(messages[sheetName].ToArray(), sheetName, null, firstMessageAdded);
@@ -63,16 +64,16 @@ namespace SheetsPersist
 			}
 		}
 
-		public void AppendRow(T t, string tabName = null)
+        public void AppendRow(T t, string sheetName = null)
 		{
-			if (tabName == null)
-				tabName = defaultSheetName;
+			if (sheetName == null)
+				sheetName = defaultSheetName;
 			
 			lock (messageLock)
 			{
-				if (!messages.ContainsKey(tabName))
-					messages[tabName] = new Queue<T>();
-				messages[tabName].Enqueue(t);
+				if (!messages.ContainsKey(sheetName))
+					messages[sheetName] = new Queue<T>();
+				messages[sheetName].Enqueue(t);
 			}
 
 			// ![](BAEDF4D24FB1C180CE95B77D1FF1A93C.png)
@@ -80,18 +81,22 @@ namespace SheetsPersist
 			DateTime now = DateTime.UtcNow;
 			TimeSpan timeSinceLastBurst = now - lastBurstTime;
 			bool firstBurst = lastBurstTime == DateTime.MinValue;
+
 			if (firstBurst || timeSinceLastBurst > minTimeBetweenBursts)
 				SendAllMessages();
 			else if (!timer.Enabled)
-			{
-				DateTime nextScheduledBurstTime = lastBurstTime + minTimeBetweenBursts;
-				TimeSpan timeTillNextBurst = nextScheduledBurstTime - now;
-				timer.Interval = timeTillNextBurst.TotalMilliseconds;
-				timer.Enabled = true;
-			}
-		}
+                EnableTimer(now);
+        }
 
-		public void FlushAllMessages()
+		private void EnableTimer(DateTime now)
+        {
+            DateTime nextScheduledBurstTime = lastBurstTime + minTimeBetweenBursts;
+            TimeSpan timeTillNextBurst = nextScheduledBurstTime - now;
+            timer.Interval = timeTillNextBurst.TotalMilliseconds;
+            timer.Enabled = true;
+        }
+
+        public void FlushAllMessages()
 		{
 			SendAllMessages();
 		}

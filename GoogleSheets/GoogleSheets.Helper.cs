@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace SheetsPersist
 {
@@ -38,60 +39,64 @@ namespace SheetsPersist
 		}
 
 		internal static void InternalAppendRows<T>(T[] instances, string sheetNameOverride = null, string documentNameOverride = null, bool justAddedFirstRow = false) where T : class
-		{
-			if (instances == null || instances.Length == 0)
-				return;
+        {
+            if (instances == null || instances.Length == 0)
+                return;
+            TrackAndValidate<T>(sheetNameOverride, documentNameOverride, out string sheetName, out string documentId);
 
-			GetDocumentAndSheetAttributes(typeof(T), out DocumentAttribute documentNameAttribute, out SheetAttribute tabNameAttribute);
+            MemberInfo[] serializableFields = GetSerializableFields<ColumnAttribute>(typeof(T));
 
-			string documentName;
-			string sheetName;
-			if (documentNameOverride != null)
-				documentName = documentNameOverride;
-			else
-				documentName = documentNameAttribute.DocumentName;
+            if (justAddedFirstRow)
+            {
+                IList<IList<Object>> firstRow = AddRows(instances, serializableFields, 0, 0);
+                ExecuteAppendRows(documentId, sheetName, firstRow);
 
-			if (sheetNameOverride != null)
-				sheetName = sheetNameOverride;
-			else
-				sheetName = tabNameAttribute.SheetName;
+                // We have to format the second row (after the header), so remaining calls to AppendRows will take the format of the previous row.
+                IList<Request> requests = new List<Request>();
+                AddHeaderColumnFormatting(requests, documentId, sheetName, serializableFields);
+                ExecuteRequests(documentId, requests);
 
-			Track(documentName, sheetName);
-			ValidateDocumentAndSheetNames(documentName, sheetName);
-			string documentId = documentIDs[documentName];
+                if (instances.Length > 1)
+                {
+                    IList<IList<Object>> remainingRows = AddRows(instances, serializableFields, 1);
+                    ExecuteAppendRows(documentId, sheetName, remainingRows);
+                }
 
-			MemberInfo[] serializableFields = GetSerializableFields<ColumnAttribute>(typeof(T));
+                requests = new List<Request>();
+                AddHeaderRowFormatting<T>(requests, documentId, sheetName);
+                ExecuteRequests(documentId, requests);
+            }
+            else
+            {
+                IList<IList<Object>> allRows = AddRows(instances, serializableFields, 0);
+                ExecuteAppendRows(documentId, sheetName, allRows);
+            }
+        }
 
-			if (justAddedFirstRow)
-			{
-				IList<IList<Object>> firstRow = AddRows(instances, serializableFields, 0, 0);
-				ExecuteAppendRows(documentId, sheetName, firstRow);
+        private static void TrackAndValidate<T>(string sheetNameOverride, string documentNameOverride, out string sheetName, out string documentId) where T : class
+        {
+            GetDocumentAndSheetAttributes(typeof(T), out DocumentAttribute documentNameAttribute, out SheetAttribute sheetNameAttribute);
 
-				// We have to format the second row (after the header), so remaining calls to AppendRows will take the format of the previous row.
-				IList<Request> requests = new List<Request>();
-				AddHeaderColumnFormatting(requests, documentId, sheetName, serializableFields);
-				ExecuteRequests(documentId, requests);
+            GetDocumentAndSheetName(sheetNameOverride, documentNameOverride, documentNameAttribute, sheetNameAttribute, out string documentName, out sheetName);
+            Track(documentName, sheetName);
+            ValidateDocumentAndSheetNames(documentName, sheetName);
+            documentId = documentIDs[documentName];
+        }
 
-				if (instances.Length > 1)
-				{
-					IList<IList<Object>> remainingRows = AddRows(instances, serializableFields, 1);
-					ExecuteAppendRows(documentId, sheetName, remainingRows);
-				}
+        private static void GetDocumentAndSheetName(string sheetNameOverride, string documentNameOverride, DocumentAttribute documentNameAttribute, SheetAttribute sheetNameAttribute, out string documentName, out string sheetName)
+        {
+            if (documentNameOverride != null)
+                documentName = documentNameOverride;
+            else
+                documentName = documentNameAttribute.DocumentName;
 
-				requests = new List<Request>();
-				AddHeaderRowFormatting<T>(requests, documentId, sheetName);
-				ExecuteRequests(documentId, requests);
-			}
-			else
-			{
-				IList<IList<Object>> allRows = AddRows(instances, serializableFields, 0);
-				ExecuteAppendRows(documentId, sheetName, allRows);
-			}
+            if (sheetNameOverride != null)
+                sheetName = sheetNameOverride;
+            else
+                sheetName = sheetNameAttribute.SheetName;
+        }
 
-			
-		}
-
-		private static IList<IList<object>> AddRows<T>(T[] instances, MemberInfo[] serializableFields, int startIndex, int endIndex = -1) where T : class
+        private static IList<IList<object>> AddRows<T>(T[] instances, MemberInfo[] serializableFields, int startIndex, int endIndex = -1) where T : class
 		{
 			IList<IList<Object>> rows = new List<IList<Object>>();
 			if (endIndex == -1)
@@ -171,12 +176,12 @@ namespace SheetsPersist
 			batchUpdate.Execute();
 		}
 
-		private static Request GetUpdateRequestForCellInTopRow(int columnIndex, string documentId, string tabName)
+		private static Request GetUpdateRequestForCellInTopRow(int columnIndex, string documentId, string sheetName)
 		{
 			Request request = new Request();
 			request.UpdateCells = new UpdateCellsRequest();
 			request.UpdateCells.Range = new GridRange();
-			request.UpdateCells.Range.SheetId = GetSheetId(documentId, tabName);
+			request.UpdateCells.Range.SheetId = GetSheetId(documentId, sheetName);
 			request.UpdateCells.Range.StartRowIndex = 0;
 			request.UpdateCells.Range.EndRowIndex = 1;
 			request.UpdateCells.Range.StartColumnIndex = columnIndex;
@@ -188,12 +193,12 @@ namespace SheetsPersist
 			return request;
 		}
 
-		private static Request GetRepeatCellRequestForEntireColumn(int columnIndex, string documentId, string tabName)
+		private static Request GetRepeatCellRequestForEntireColumn(int columnIndex, string documentId, string sheetName)
 		{
 			Request request = new Request();
 			request.RepeatCell = new RepeatCellRequest();
 			request.RepeatCell.Range = new GridRange();
-			request.RepeatCell.Range.SheetId = GetSheetId(documentId, tabName);
+			request.RepeatCell.Range.SheetId = GetSheetId(documentId, sheetName);
 			request.RepeatCell.Range.StartRowIndex = 0;
 			request.RepeatCell.Range.EndRowIndex = null;
 			request.RepeatCell.Range.StartColumnIndex = columnIndex;
@@ -274,65 +279,51 @@ namespace SheetsPersist
 
 		private static void Execute(SpreadsheetsResource.ValuesResource.UpdateRequest request)
 		{
-			request.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-			try
-			{
-				UpdateValuesResponse response = request.Execute();
-				if (response != null)
-				{
-
-				}
+            request.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+            try
+            {
+                request.Execute();
+            }
+            catch (Exception ex)
+            {
+				HandleException($"Exception executing UpdateRequest.", request.SpreadsheetId, null, ex);
 			}
-			catch (Exception ex)
-			{
-				string msg = ex.Message;
-				System.Diagnostics.Debugger.Break();
-			}
-		}
+        }
 
 		private static void Execute(SpreadsheetsResource.ValuesResource.BatchUpdateRequest request)
+        {
+            try
+            {
+                request.Execute();
+            }
+            catch (Exception ex)
+            {
+				HandleException($"Exception executing BatchUpdateRequest.", request.SpreadsheetId, null, ex);
+			}
+        }
+		static void ExecuteAppendRows(string documentId, string sheetName, IList<IList<object>> values)
 		{
+			SpreadsheetsResource.ValuesResource.AppendRequest request = GetAppendRequest(documentId, sheetName, values);
 			try
 			{
-				BatchUpdateValuesResponse response = request.Execute();
-				if (response != null)
-				{
-
-				}
+				request.Execute();
 			}
 			catch (Exception ex)
 			{
-				string msg = ex.Message;
-				System.Diagnostics.Debugger.Break();
+				HandleException($"Exception executing AppendRequest.", request.SpreadsheetId, null, ex);
 			}
 		}
 
-		static void ExecuteAppendRows(string documentId, string tabName, IList<IList<object>> values)
-		{
-			SpreadsheetsResource.ValuesResource.AppendRequest request = GetAppendRequest(documentId, tabName, values);
-			try
-			{
-				var response = request.Execute();
-			}
-			catch (Exception ex)
-			{
-				if (ex != null)
-				{
-					
-				}
-			}
-		}
-
-		static SpreadsheetsResource.ValuesResource.AppendRequest GetAppendRequest(string documentId, string tabName, IList<IList<object>> values)
+		static SpreadsheetsResource.ValuesResource.AppendRequest GetAppendRequest(string documentId, string sheetName, IList<IList<object>> values)
 		{
 			SpreadsheetsResource.ValuesResource.AppendRequest request =
-												 Service.Spreadsheets.Values.Append(new ValueRange() { Values = values }, documentId, tabName);
+												 Service.Spreadsheets.Values.Append(new ValueRange() { Values = values }, documentId, sheetName);
 			request.InsertDataOption = SpreadsheetsResource.ValuesResource.AppendRequest.InsertDataOptionEnum.INSERTROWS;
 			request.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
 			return request;
 		}
 
-		static void ExecuteInsertRows(string documentId, string tabName, IList<IList<object>> values, int rowStartIndex = 0)
+		static void ExecuteInsertRows(string documentId, string sheetName, IList<IList<object>> values, int rowStartIndex = 0)
 		{
 			// TODO: Untested. Test this.
 			BatchUpdateValuesRequest requestBody = GetBatchUpdateRequest();
@@ -342,7 +333,7 @@ namespace SheetsPersist
 			insertDimensionRequest.Range.StartIndex = rowStartIndex + values.Count;
 			insertDimensionRequest.Range.Dimension = "ROWS";
 			SpreadsheetsResource.ValuesResource.AppendRequest appendRequest =
-									 Service.Spreadsheets.Values.Append(new ValueRange() { Values = values }, documentId, tabName);
+									 Service.Spreadsheets.Values.Append(new ValueRange() { Values = values }, documentId, sheetName);
 			appendRequest.InsertDataOption = SpreadsheetsResource.ValuesResource.AppendRequest.InsertDataOptionEnum.INSERTROWS;
 			appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
 			try
@@ -351,10 +342,9 @@ namespace SheetsPersist
 			}
 			catch (Exception ex)
 			{
-				if (ex != null)
-				{
-
-				}
+				HandleException($"Exception in {nameof(ExecuteInsertRows)} (in call to appendRequest.Execute).", documentId, sheetName);
+				System.Diagnostics.Debug.WriteLine($"Exception in ExecuteInsertRows (in call to appendRequest.Execute): {ex.Message} Stack trace: {ex.StackTrace}.");
+				System.Diagnostics.Debug.WriteLine("Calling ExecuteBatchUpdate...");
 				ExecuteBatchUpdate(documentId, requestBody);
 			}
 		}
@@ -377,9 +367,9 @@ namespace SheetsPersist
 		}
 
 
-		private static void GetHeaderRow(string docName, string tabName, out List<string> headerRow, out IList<IList<object>> allRows)
+		private static void GetHeaderRow(string docName, string sheetName, out List<string> headerRow, out IList<IList<object>> allRows)
 		{
-			allRows = GetCells(docName, tabName);
+			allRows = GetCells(docName, sheetName);
 			Dictionary<int, string> headers = new Dictionary<int, string>();
 			IList<object> headerRowObjects = allRows[0];
 			headerRow = headerRowObjects.Select(x => x.ToString()).ToList();
