@@ -342,8 +342,8 @@ namespace SheetsPersist
 			}
 			catch (Exception ex)
 			{
-				HandleException($"Exception in {nameof(ExecuteInsertRows)} (in call to appendRequest.Execute).", documentId, sheetName);
-				System.Diagnostics.Debug.WriteLine($"Exception in ExecuteInsertRows (in call to appendRequest.Execute): {ex.Message} Stack trace: {ex.StackTrace}.");
+				HandleException($"Exception in {nameof(ExecuteInsertRows)} (in call to appendRequest.Execute).", documentId, sheetName, ex);
+				System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}.");
 				System.Diagnostics.Debug.WriteLine("Calling ExecuteBatchUpdate...");
 				ExecuteBatchUpdate(documentId, requestBody);
 			}
