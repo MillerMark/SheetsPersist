@@ -206,3 +206,5 @@ GoogleSheets.TimeBetweenThrottledUpdates = TimeSpan.FromSeconds(10);
 
 We recommend keeping this time above 2 seconds to stay below Google Api Messaging Quotas.
 
+## Update
+1.3.3 - Added concurrency lock around the MessageThrottlers and removed calls to System.Debugger.Break().
