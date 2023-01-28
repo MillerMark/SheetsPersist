@@ -5,7 +5,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
 namespace SheetsPersist
-{
+{		
 	public class TrackPropertyChanges : INotifyPropertyChanged, ITrackPropertyChanges
 	{
 		public TrackPropertyChanges OwningTracker;

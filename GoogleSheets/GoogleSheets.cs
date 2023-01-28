@@ -434,11 +434,20 @@ namespace SheetsPersist
         /// <param name="sheetNameOverride">An optional override for the sheet (tab) name.</param>
         public static void AppendRow<T>(T instance, string sheetNameOverride = null) where T : class
 		{
-			if (!messageThrottlers.ContainsKey(typeof(T)))
-				messageThrottlers[typeof(T)] = new MessageThrottler<T>(TimeBetweenThrottledUpdates);
+			MessageThrottler<T> foundThrottler = null;
 
-			if (messageThrottlers[typeof(T)] is MessageThrottler<T> throttler)
-				throttler.AppendRow(instance, sheetNameOverride);
+			lock (messageThrottlersLock)
+			{
+				if (!messageThrottlers.ContainsKey(typeof(T)))
+					messageThrottlers[typeof(T)] = new MessageThrottler<T>(TimeBetweenThrottledUpdates);
+
+				if (!(messageThrottlers[typeof(T)] is MessageThrottler<T> throttler))
+					return;
+
+				foundThrottler = throttler;
+			}
+
+			foundThrottler.AppendRow(instance, sheetNameOverride);
 		}
 
 		/// <summary>
@@ -447,12 +456,13 @@ namespace SheetsPersist
 		/// </summary>
 		public static void FlushAllMessages()
 		{
-			foreach (Type type in messageThrottlers.Keys)
-			{
-				Type throttlerType = messageThrottlers[type].GetType();
-				MethodInfo methodDefinition = throttlerType.GetMethod(nameof(MessageThrottler<object>.FlushAllMessages), new Type[] { });
-				methodDefinition.Invoke(messageThrottlers[type], new object[] { });
-			}
+			lock (messageThrottlersLock)
+				foreach (Type type in messageThrottlers.Keys)
+				{
+					Type throttlerType = messageThrottlers[type].GetType();
+					MethodInfo methodDefinition = throttlerType.GetMethod(nameof(MessageThrottler<object>.FlushAllMessages), new Type[] { });
+					methodDefinition.Invoke(messageThrottlers[type], new object[] { });
+				}
 		}
 
 		public static TimeSpan TimeBetweenThrottledUpdates { get; set; } = TimeSpan.FromSeconds(10);

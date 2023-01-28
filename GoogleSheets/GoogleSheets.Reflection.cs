@@ -48,7 +48,7 @@ namespace SheetsPersist
 #pragma warning disable CS0168  // Used for diagnostics/debugging.
 				catch (Exception ex)
 				{
-					System.Diagnostics.Debugger.Break();
+					//System.Diagnostics.Debugger.Break();
 					return;
 				}
 			enumProperty.SetValue(instance, value);
@@ -59,7 +59,9 @@ namespace SheetsPersist
 			if (property.PropertyType.IsEnum)
 				SetEnumValue(property, instance, value);
 			else
-				System.Diagnostics.Debugger.Break();
+			{
+				//System.Diagnostics.Debugger.Break();
+			}
 		}
 
 		static PropertyInfo GetCorrespondingPropertyInfo(Type type, string header)
@@ -100,7 +102,7 @@ namespace SheetsPersist
 							property.SetValue(instance, decimalValue);
 						else
 						{
-							System.Diagnostics.Debugger.Break();
+							//System.Diagnostics.Debugger.Break();
 						}
 						break;
 					case "System.Double":
@@ -161,7 +163,10 @@ namespace SheetsPersist
 					if (property.PropertyType.BaseType.FullName == "System.Enum")
 						return 0;
 					else
-						System.Diagnostics.Debugger.Break();
+					{
+						//System.Diagnostics.Debugger.Break();
+					}
+
 					break;
 			}
 			return null;

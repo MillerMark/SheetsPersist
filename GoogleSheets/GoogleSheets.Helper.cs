@@ -11,6 +11,7 @@ namespace SheetsPersist
 {
 	public static partial class GoogleSheets
 	{
+		static object messageThrottlersLock = new object();
 		static Dictionary<Type, object> messageThrottlers = new Dictionary<Type, object>();
 
 		private static void ValidateDocumentAndSheetNames(string documentName, string sheetName, bool trackSheetIfMissing = false)
@@ -308,9 +309,20 @@ namespace SheetsPersist
 			{
 				request.Execute();
 			}
-			catch (Exception ex)
+			catch (Exception ex1)
 			{
-				HandleException($"Exception executing AppendRequest.", request.SpreadsheetId, null, ex);
+				LogExceptionToConsole(request.SpreadsheetId, sheetName, ex1);
+				System.Threading.Thread.Sleep(1000);
+				// Try one more time...
+				try
+				{
+					request.Execute();
+                }
+                catch (Exception ex2)
+                {
+                    HandleException($"Exception executing AppendRequest.", request.SpreadsheetId, null, ex2);
+				}
+                
 			}
 		}
 
