@@ -7,6 +7,8 @@ namespace SheetsPersist
 {
 	public static partial class GoogleSheets
 	{
+		static string lastPropertyTransferred;
+		static string lastValueType;
 		static string GetValue(object obj, MemberInfo memberInfo)
 		{
 			if (memberInfo is PropertyInfo propInfo)
@@ -88,14 +90,28 @@ namespace SheetsPersist
 				if (property == null)
 					continue;
 
+				lastPropertyTransferred = property.Name;
+
 				string fullName = property.PropertyType.FullName;
-				string value = (string)row[i];
+				object rowValue = row[i];
+				lastValueType = rowValue.GetType().Name;
+				string value;
+				if (rowValue is string)
+					value = (string)rowValue;
+				else
+					value = rowValue.ToString();
+
 				switch (fullName)
 				{
 					case "System.Int32":
 						if (!int.TryParse(value, out int intValue))
 							intValue = 0;
 						property.SetValue(instance, intValue);
+						break;
+					case "System.Int64":
+						if (!long.TryParse(value, out long longValue))
+							intValue = 0;
+						property.SetValue(instance, longValue);
 						break;
 					case "System.Decimal":
 						if (decimal.TryParse(value, out decimal decimalValue))
@@ -115,7 +131,7 @@ namespace SheetsPersist
 						}
 						break;
 					case "System.String":
-						property.SetValue(instance, row[i]);
+						property.SetValue(instance, rowValue);
 						break;
 					case "System.Boolean":
 						string compareValue = value.ToLower().Trim();
@@ -132,6 +148,8 @@ namespace SheetsPersist
 				}
 			}
 
+			lastPropertyTransferred = null;
+			lastValueType = null;
 			SetDefaultsForEmptyCells(instance, headers, row, type);
 		}
 
@@ -149,6 +167,8 @@ namespace SheetsPersist
 			{
 				case "System.Int32":
 					return default(int);
+				case "System.Int64":
+					return default(long);
 				case "System.String":
 					return string.Empty;
 				case "System.Boolean":

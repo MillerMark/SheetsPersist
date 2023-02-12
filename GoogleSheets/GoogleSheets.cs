@@ -45,7 +45,23 @@ namespace SheetsPersist
 			return Get<T>(documentNameAttribute.DocumentName, sheetAttribute.SheetName);
 		}
 
-		static IList<IList<object>> GetCells(string docName, string sheetName, string cellRange = "")
+		static void SetValueRenderOption(SpreadsheetsResource.ValuesResource.GetRequest request, ReadValuesAs valueRenderOption)
+		{
+			switch (valueRenderOption)
+			{
+				case ReadValuesAs.Formatted:
+					request.ValueRenderOption = SpreadsheetsResource.ValuesResource.GetRequest.ValueRenderOptionEnum.FORMATTEDVALUE;
+					break;
+				case ReadValuesAs.Unformatted:
+					request.ValueRenderOption = SpreadsheetsResource.ValuesResource.GetRequest.ValueRenderOptionEnum.UNFORMATTEDVALUE;
+					break;
+				case ReadValuesAs.Formula:
+					request.ValueRenderOption = SpreadsheetsResource.ValuesResource.GetRequest.ValueRenderOptionEnum.FORMULA;
+					break;
+			}
+		}
+
+		static IList<IList<object>> GetCells(string docName, string sheetName, string cellRange = "", ReadValuesAs valueRenderOption = ReadValuesAs.Formatted)
 		{
 			if (!documentIDs.ContainsKey(docName))
 				throw new InvalidDataException($"docName (\"{docName}\") not found!");
@@ -59,7 +75,8 @@ namespace SheetsPersist
 				range = $"{sheetName}!{cellRange}";
 
             SpreadsheetsResource.ValuesResource.GetRequest request = Service.Spreadsheets.Values.Get(documentId, range);
-            try
+			SetValueRenderOption(request, valueRenderOption);
+			try
             {
                 ValueRange response = request.Execute();
                 return response.Values;
@@ -90,24 +107,30 @@ namespace SheetsPersist
 		public static List<T> Get<T>(string documentName, string sheetName) where T : new()
 		{
 			Track(documentName, sheetName);
+			ReadValuesAs valueRenderOption = ReadValuesAs.Formatted;
+			var sheetAttribute = typeof(T).GetCustomAttribute<SheetAttribute>();
+			if (sheetAttribute != null)
+				valueRenderOption = sheetAttribute.ReadValuesAs;
 			List<T> result = new List<T>();
 			try
 			{
-				IList<IList<object>> allCells = GetCells(documentName, sheetName);
+				IList<IList<object>> allCells = GetCells(documentName, sheetName, "", valueRenderOption);
 				Dictionary<int, string> headers = new Dictionary<int, string>();
 				IList<object> headerRow = allCells[0];
+
 				for (int i = 0; i < headerRow.Count; i++)
-				{
 					headers.Add(i, (string)headerRow[i]);
-				}
+
 				for (int row = 1; row < allCells.Count; row++)
-				{
 					result.Add(NewItem<T>(headers, allCells[row]));
-				}
 			}
 			catch (Exception ex)
             {
-                HandleException($"Exception reading cells of type <{typeof(T).Name}>.", documentName, sheetName, ex);
+				string additionalInfo = string.Empty;
+				if (!string.IsNullOrEmpty(lastPropertyTransferred))
+					additionalInfo = $"Error setting {lastPropertyTransferred}. Verify the declared type is compatible with type of the value read from the sheet ({lastValueType}).";
+
+				HandleException($"Exception reading cells of type <{typeof(T).Name}>.{additionalInfo}", documentName, sheetName, ex);
 
 			}
             return result;
@@ -136,15 +159,20 @@ namespace SheetsPersist
 		}
 
 		/// <summary>
-		/// Saves changes in the specified instances to the specified document and sheet. If instances implements 
+		/// Saves changes in the specified instances to the specified document and sheet. If instances implement 
 		/// <cref>ITrackPropertyChanges</cref>, then only changed properties will be saved.
 		/// </summary>
-		/// <param name="docName">The name of the spreadsheet document to save to (registered with a call to RegisterDocumentID).</param>
+		/// <param name="docName">The name of the spreadsheet document to save to (registered with a call to 
+		/// RegisterDocumentID).</param>
 		/// <param name="sheetName">The name of the sheet (the tab in the document) to receive the saved data.</param>
 		/// <param name="instances">The instances to save.</param>
 		/// <param name="instanceType">The type of the instances to save.</param>
-		/// <param name="saveOnlyTheseMembersStr">An optional comma-separated list of the names of the member properties to save.</param>
-		public static void SaveChanges(string docName, string sheetName, object[] instances, Type instanceType, string saveOnlyTheseMembersStr = null)
+		/// <param name="saveOnlyTheseMembersStr">An optional comma-separated list of the names of the member 
+		/// properties to save.</param>
+		/// <param name="valueInputOption">The ValueInputOption option. Raw to store data as-is, and UserEntered, to 
+		/// have Google Sheets parse string data and convert it to other data types (numbers, dates, etc.) as if the 
+		/// user typed the data in inside Google Sheets.</param>
+		public static void SaveChanges(string docName, string sheetName, object[] instances, Type instanceType, string saveOnlyTheseMembersStr = null, WriteValuesAs valueInputOption = WriteValuesAs.UserEntered)
 		{
 			if (instances == null || instances.Length == 0)
 				return;
@@ -164,7 +192,7 @@ namespace SheetsPersist
 
 			MemberInfo[] serializableFields = GetSerializableFields<ColumnAttribute>(instanceType);
 
-			BatchUpdateValuesRequest requestBody = GetBatchUpdateRequest();
+			BatchUpdateValuesRequest requestBody = GetBatchUpdateRequest(valueInputOption);
 			for (int i = 0; i < instances.Length; i++)
 			{
 				int rowIndex = GetInstanceRowIndex(instances[i], indexFields, allRows, headerRow);

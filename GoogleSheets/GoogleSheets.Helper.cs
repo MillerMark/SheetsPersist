@@ -517,13 +517,25 @@ namespace SheetsPersist
 			Execute(request);
 		}
 
-		private static BatchUpdateValuesRequest GetBatchUpdateRequest()
+		static void SetValueInputOption(BatchUpdateValuesRequest requestBody, WriteValuesAs valueInputOption)
+		{
+			switch (valueInputOption)
+			{
+				case WriteValuesAs.Raw:
+					requestBody.ValueInputOption = "RAW";
+					break;
+				case WriteValuesAs.UserEntered:
+					requestBody.ValueInputOption = "USER_ENTERED";
+					break;
+			}
+		}
+
+		private static BatchUpdateValuesRequest GetBatchUpdateRequest(WriteValuesAs valueInputOption = WriteValuesAs.UserEntered)
 		{
 			BatchUpdateValuesRequest requestBody = new BatchUpdateValuesRequest();
 			requestBody.Data = new List<ValueRange>();
-			requestBody.ValueInputOption = "USER_ENTERED";
+			SetValueInputOption(requestBody, valueInputOption);
 			return requestBody;
 		}
 	}
 }
-
