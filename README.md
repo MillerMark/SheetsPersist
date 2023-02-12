@@ -222,7 +222,7 @@ Available write options are:
 * **Raw** - The values the transferred to the Sheet will not be parsed and will be stored as-is.
 * **UserEntered** - (**default write format if not specified**) The values will be parsed as if the user typed them into the UI. Numbers will stay as numbers, but strings may be converted to numbers, dates, etc. following the same rules that are applied when entering text into a cell via the Google Sheets UI.
 
-## Update
+## Updates
 1.3.4 - Added support for specifying formats for reading and writing. Added support for the Int64 (long) property type. Improved error message content.
 
 1.3.3 - Added concurrency lock around the MessageThrottlers and removed calls to System.Debugger.Break().
