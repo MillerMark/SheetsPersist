@@ -206,5 +206,22 @@ GoogleSheets.TimeBetweenThrottledUpdates = TimeSpan.FromSeconds(10);
 
 We recommend keeping this time above 2 seconds to stay below Google Api Messaging Quotas.
 
+### Custom Read/Write Formats
+
+You can specify data formats for values written to and read from Google Sheets. Just add one or both of the optional enums to the [Sheet] attribute, like this:
+
+[Sheet("Data", 1, 0, ReadValuesAs.Unformatted, WriteValuesAs.Raw)]
+
+Available read options are:
+
+* Formatted - (**default read format if not specified**) Values will be calculated & formatted in the reply according to the cell's formatting. Formatting is based on the spreadsheet's locale, not the requesting user's locale. For example, if `A1` is `1.23` and `A2` is `=A1` and formatted as currency, then `A2` would return `"$1.23"`.
+* Unformatted - Values will be calculated, but not formatted in the reply. For example, if `A1` is `1.23` and `A2` is `=A1` and formatted as currency, then `A2` would return the number `1.23`.
+* Formula - Values will not be calculated. The reply will include the formulas. For example, if `A1` is `1.23` and `A2` is `=A1` and formatted as currency, then A2 would return `"=A1"`.
+
+Available write options are:
+* Raw - The values the transferred to the Sheet will not be parsed and will be stored as-is.
+* UserEntered - (**default write format if not specified**) The values will be parsed as if the user typed them into the UI. Numbers will stay as numbers, but strings may be converted to numbers, dates, etc. following the same rules that are applied when entering text into a cell via the Google Sheets UI.
+
 ## Update
+1.3.4 - Added support for specifying formats for reading and writing. Added support for the Int64 (long) property type. Improved error message content.
 1.3.3 - Added concurrency lock around the MessageThrottlers and removed calls to System.Debugger.Break().
