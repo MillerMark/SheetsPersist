@@ -129,6 +129,8 @@ namespace SheetsPersist
 				string additionalInfo = string.Empty;
 				if (!string.IsNullOrEmpty(lastPropertyTransferred))
 					additionalInfo = $"Error setting {lastPropertyTransferred}. Verify the declared type is compatible with type of the value read from the sheet ({lastValueType}).";
+				else if (!string.IsNullOrEmpty(lastPropertyDefaultValueSet))
+					additionalInfo = $"Error setting default value for {lastPropertyDefaultValueSet}. Verify the property's declared type can accept a default value.";
 
 				HandleException($"Exception reading cells of type <{typeof(T).Name}>.{additionalInfo}", documentName, sheetName, ex);
 

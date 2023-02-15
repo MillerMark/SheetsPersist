@@ -9,6 +9,7 @@ namespace SheetsPersist
 	{
 		static string lastPropertyTransferred;
 		static string lastValueType;
+		static string lastPropertyDefaultValueSet;
 		static string GetValue(object obj, MemberInfo memberInfo)
 		{
 			if (memberInfo is PropertyInfo propInfo)
@@ -199,8 +200,10 @@ namespace SheetsPersist
 				if (property == null)
 					continue;
 
+				lastPropertyDefaultValueSet = property.Name;
 				object defaultValue = GetDefaultValue(property);
 				property.SetValue(instance, defaultValue);
+				lastPropertyDefaultValueSet = null;
 			}
 		}
 	}
