@@ -97,7 +97,7 @@ GoogleSheets.AppendRow(instance);
 
 Where *instance* is an instance of the class that has been adorned with the Document and Sheet attributes.
 
-Logging to spreadsheets is also cool because you can use Google Sheeet's conditional formatting to emphasize important data (like error messages). And you can store multi-line string data to a single cell (for example, a call stack).
+Logging to spreadsheets is also cool because you can use Google Sheet's conditional formatting to emphasize important data (like error messages). And you can store multi-line string data to a single cell (for example, a call stack).
 
 ### Custom Sheet Names
 The logging API lets you to optionally override the sheet name when you log instances. So for example, if you need to organize your logs by month, you can do something like this:
